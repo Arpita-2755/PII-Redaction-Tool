@@ -85,7 +85,6 @@ def redact_docx(
         "counts_by_type": dict(sorted(counts.items())),
         "residual_original_values": residuals,
         "detected_candidate_replacement_rate": replacement_rate,
-        "silver_recall": replacement_rate,
         "entities": all_entities,
         "mapping": factory.export_mapping(),
     }

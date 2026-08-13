@@ -1,4 +1,5 @@
 from pathlib import Path
+import ipaddress
 import tempfile
 import unittest
 
@@ -80,6 +81,85 @@ class RedactionTests(unittest.TestCase):
             "invalid IP 999.168.1.25, support line 12345, and addressed respectively."
         )
         self.assertEqual(detect_entities(text), [])
+
+    def test_redacts_grouped_indian_phone_number(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.docx"
+            output_path = tmp_path / "output.docx"
+            document = Document()
+            document.add_paragraph("Phone: +91 98765 43210")
+            document.add_paragraph("Repeat: +91 98765 43210")
+            document.save(input_path)
+
+            report = redact_docx(input_path, output_path)
+            text = extract_docx_text(output_path)
+            phones = [item for item in report["mapping"] if item["type"] == "phone"]
+
+            self.assertNotIn("+91 98765 43210", text)
+            self.assertEqual(phones[0]["original"], "+91 98765 43210")
+            self.assertRegex(phones[0]["replacement"], r"^\+91 \d{5} \d{5}$")
+
+    def test_ipv6_addresses_are_single_valid_replacements(self) -> None:
+        samples = [
+            "2001:db8:85a3::8a2e:370:7334",
+            "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+        ]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                entities = detect_entities(f"IPv6: {sample}.")
+                self.assertEqual(len(entities), 1)
+                self.assertEqual(entities[0].text, sample)
+                self.assertEqual(entities[0].entity_type, "ip_address")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.docx"
+            output_path = tmp_path / "output.docx"
+            document = Document()
+            for sample in samples:
+                document.add_paragraph(f"IPv6: {sample}")
+            document.save(input_path)
+
+            report = redact_docx(input_path, output_path)
+            text = extract_docx_text(output_path)
+            mapping = {
+                item["original"]: item["replacement"]
+                for item in report["mapping"]
+                if item["type"] == "ip_address"
+            }
+
+            for sample in samples:
+                self.assertNotIn(sample, text)
+                replacement = mapping[sample]
+                self.assertEqual(ipaddress.ip_address(replacement).version, 6)
+                self.assertIn(replacement, text)
+
+    def test_mixed_text_address_is_redacted_as_complete_span(self) -> None:
+        address = "42 Lake View Road, Sector 18, Chandigarh, 160018, India"
+        paragraph = (
+            f"The company office is at {address}. "
+            "The server used for testing is 192.168.10.24."
+        )
+        entities = detect_entities(paragraph)
+        addresses = [entity for entity in entities if entity.entity_type == "address"]
+        self.assertEqual(len(addresses), 1)
+        self.assertEqual(addresses[0].text, address)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.docx"
+            output_path = tmp_path / "output.docx"
+            document = Document()
+            document.add_paragraph(paragraph)
+            document.save(input_path)
+
+            redact_docx(input_path, output_path)
+            text = extract_docx_text(output_path)
+
+            self.assertNotIn(address, text)
+            self.assertNotIn("Chandigarh, 160018, India", text)
+            self.assertNotIn("41100118", text)
 
     def test_repeated_pii_uses_consistent_fake_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

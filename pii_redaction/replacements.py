@@ -102,6 +102,8 @@ class ReplacementFactory:
         if entity_type == "dob":
             return _fake_date(value, index)
         if entity_type == "ip_address":
+            if ":" in value:
+                return _fake_ipv6(index)
             return f"203.0.113.{1 + index % 254}"
         return "[REDACTED]"
 
@@ -148,6 +150,13 @@ def _fake_date(value: str, index: int) -> str:
         "December",
     ]
     return f"{day} {month_names[month - 1]} {year}"
+
+
+def _fake_ipv6(index: int) -> str:
+    block_one = index % 0x10000
+    block_two = (index // 11) % 0x10000
+    host = 1 + index % 0xFFFE
+    return f"2001:db8:{block_one:x}:{block_two:x}::{host:x}"
 
 
 def _stable_index(value: str, modulo: int) -> int:

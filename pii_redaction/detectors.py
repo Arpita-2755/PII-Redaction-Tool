@@ -7,6 +7,7 @@ large NER model so it can run on free deployment tiers without model downloads.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
 import re
 from typing import Iterable
 
@@ -30,13 +31,14 @@ IPV4_RE = re.compile(
     r"(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"
 )
 
-IPV6_RE = re.compile(
-    r"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b"
+IPV6_CANDIDATE_RE = re.compile(
+    r"(?<![A-Fa-f0-9:.])(?:[A-Fa-f0-9]{0,4}:){2,7}[A-Fa-f0-9]{0,4}"
+    r"(?![A-Fa-f0-9:])"
 )
 
 PHONE_RE = re.compile(
     r"(?<!\w)(?:\+?\d{1,3}[\s.-]?)?"
-    r"(?:\(?[6-9]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{4}|[6-9]\d{9})(?!\w)"
+    r"(?:[6-9]\d{4}[\s.-]?\d{5}|\(?[6-9]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{4}|[6-9]\d{9})(?!\w)"
 )
 
 CREDIT_CARD_CANDIDATE_RE = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
@@ -268,7 +270,7 @@ def detect_entities(text: str) -> list[Entity]:
     candidates.extend(_regex_entities(text, EMAIL_RE, "email", 0.99, "email_regex"))
     candidates.extend(_regex_entities(text, SSN_RE, "ssn", 0.99, "ssn_regex"))
     candidates.extend(_regex_entities(text, IPV4_RE, "ip_address", 0.98, "ipv4_regex"))
-    candidates.extend(_regex_entities(text, IPV6_RE, "ip_address", 0.92, "ipv6_regex"))
+    candidates.extend(_ipv6_entities(text))
     candidates.extend(_phone_entities(text))
     candidates.extend(_credit_card_entities(text))
     candidates.extend(_dob_entities(text))
@@ -322,11 +324,27 @@ def _phone_entities(text: str) -> list[Entity]:
         digits = re.sub(r"\D", "", value)
         if len(digits) < 10 or len(digits) > 13:
             continue
-        if len(digits) == 10 and not digits.startswith(("6", "7", "8", "9")):
+        local_digits = digits[-10:]
+        if not local_digits.startswith(("6", "7", "8", "9")):
             continue
-        if len(set(digits[-10:])) <= 2:
+        if len(set(local_digits)) <= 2:
             continue
         entities.append(Entity(match.start(), match.end(), "phone", value, 0.92, "phone_regex"))
+    return entities
+
+
+def _ipv6_entities(text: str) -> list[Entity]:
+    entities: list[Entity] = []
+    for match in IPV6_CANDIDATE_RE.finditer(text):
+        value = match.group(0)
+        try:
+            parsed = ipaddress.ip_address(value)
+        except ValueError:
+            continue
+        if parsed.version == 6:
+            entities.append(
+                Entity(match.start(), match.end(), "ip_address", value, 0.94, "ipv6_regex")
+            )
     return entities
 
 
@@ -356,7 +374,7 @@ def _dob_entities(text: str) -> list[Entity]:
 def _address_entities(text: str) -> list[Entity]:
     entities = [
         entity
-        for entity in _regex_entities(text, STREET_ADDRESS_RE, "address", 0.84, "street_address")
+        for entity in _street_address_entities(text)
         if _looks_like_address(entity.text)
     ]
     for match in ADDRESS_KEYWORD_RE.finditer(text):
@@ -370,6 +388,35 @@ def _address_entities(text: str) -> list[Entity]:
         start = match.start(1)
         entities.append(Entity(start, start + len(value), "address", value, 0.78, "address_context"))
     return entities
+
+
+def _street_address_entities(text: str) -> list[Entity]:
+    entities: list[Entity] = []
+    for match in STREET_ADDRESS_RE.finditer(text):
+        start = match.start()
+        end = _extend_street_address_end(text, start, match.end())
+        value = text[start:end].strip(" ,")
+        if not value:
+            continue
+        entities.append(
+            Entity(start, start + len(value), "address", value, 0.84, "street_address")
+        )
+    return entities
+
+
+def _extend_street_address_end(text: str, start: int, initial_end: int) -> int:
+    max_end = min(len(text), start + 180)
+    sentence_end = max_end
+    for delimiter in ".;\n\r":
+        index = text.find(delimiter, initial_end)
+        if index != -1:
+            sentence_end = min(sentence_end, index)
+
+    candidate = text[start:sentence_end].strip(" ,")
+    has_postal_code = bool(re.search(r"\b\d{5,6}\b", candidate))
+    if candidate.count(",") >= 2 and has_postal_code and _looks_like_address(candidate):
+        return start + len(candidate)
+    return initial_end
 
 
 def _company_entities(text: str) -> list[Entity]:

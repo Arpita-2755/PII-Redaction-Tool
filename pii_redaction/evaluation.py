@@ -53,10 +53,7 @@ def write_markdown_report(
     counts = Counter(run_report.get("counts_by_type", {}))
     total = run_report.get("total_replacements", 0)
     residuals = run_report.get("residual_original_values", [])
-    replacement_rate = run_report.get(
-        "detected_candidate_replacement_rate",
-        run_report.get("silver_recall", 1.0),
-    )
+    replacement_rate = run_report.get("detected_candidate_replacement_rate", 1.0)
 
     lines = [
         "# Evaluation Strategy and Metrics",
@@ -77,7 +74,7 @@ def write_markdown_report(
             [
                 "## Gold Fixture Metrics",
                 "",
-                "These are entity-level set metrics measured against the controlled fixture ground truth.",
+                "These are entity-level set metrics measured against the controlled fixture ground truth. They are not claimed as real-world benchmark accuracy.",
                 "",
                 f"- True positives: {gold_score['true_positive']}",
                 f"- False positives: {gold_score['false_positive']}",

@@ -107,18 +107,20 @@ Current controlled-fixture metrics:
 
 | Metric | Value |
 | --- | ---: |
-| True positives | 19 |
+| True positives | 22 |
 | False positives | 0 |
 | False negatives | 0 |
 | Precision | 100.00% |
 | Recall | 100.00% |
 | Accuracy | 100.00% |
 
+These values apply only to the controlled fixture and are not claimed as real-world benchmark accuracy.
+
 Current prospectus audit:
 
 | Audit item | Value |
 | --- | ---: |
-| Total replacements | 317 |
+| Total replacements | 321 |
 | XML parts scanned | 150 |
 | Paragraphs scanned | 4864 |
 | Residual detected originals | 0 |
@@ -141,6 +143,8 @@ python -m unittest discover -s tests -v
 ## Deployment
 
 The app is ready for free-tier deployment on Render.
+
+Current deployment: https://pii-redaction-tool-bomu.onrender.com
 
 Render configuration is included in `render.yaml`:
 

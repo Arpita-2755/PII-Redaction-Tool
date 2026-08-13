@@ -11,9 +11,9 @@ Structured PII is detected with strict regular expressions and validators. Credi
 
 ## Gold Fixture Metrics
 
-These are entity-level set metrics measured against the controlled fixture ground truth.
+These are entity-level set metrics measured against the controlled fixture ground truth. They are not claimed as real-world benchmark accuracy.
 
-- True positives: 19
+- True positives: 22
 - False positives: 0
 - False negatives: 0
 - Precision: 100.00%
@@ -22,19 +22,19 @@ These are entity-level set metrics measured against the controlled fixture groun
 
 | PII Type | TP | FP | FN | Precision | Recall | Accuracy |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| address | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
+| address | 3 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 | company | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 | credit_card | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 | dob | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 | email | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
-| ip_address | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
+| ip_address | 3 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 | person | 3 | 0 | 0 | 100.00% | 100.00% | 100.00% |
-| phone | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
+| phone | 3 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 | ssn | 2 | 0 | 0 | 100.00% | 100.00% | 100.00% |
 
 ## Prospectus Audit
 
-- Total replacements: 317
+- Total replacements: 321
 - XML parts scanned: 150
 - Paragraphs scanned: 4864
 - Residual original PII values found after replacement: 0
@@ -49,7 +49,7 @@ These are entity-level set metrics measured against the controlled fixture groun
 | company | 156 |
 | email | 52 |
 | person | 95 |
-| phone | 1 |
+| phone | 5 |
 
 ## False Positive / False Negative Notes
 
