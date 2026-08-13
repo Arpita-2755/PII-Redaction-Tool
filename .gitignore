@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+uploads/
+Red Herring Prospectus.docx
+outputs/red_herring_prospectus_redacted.docx
+outputs/red_herring_prospectus_redacted_final.docx
+outputs/evaluation_report.docx
+outputs/evaluation_report.md
+outputs/evaluation_report_final.docx
+outputs/evaluation_report_final.md
+outputs/redaction_run*.json
+outputs/web/
+outputs/fixture/
+outputs/render_check*/
+outputs/web_*
+server.log
+CODEX_HANDOFF.md
+.pytest_cache/
