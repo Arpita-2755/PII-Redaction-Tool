@@ -36,7 +36,8 @@ Detection uses a hybrid rule-based approach:
 - Regular expressions for structured PII such as emails, SSNs, phone numbers, and IP addresses.
 - Luhn validation for credit card candidates to reduce false positives.
 - Contextual DOB detection, so ordinary business dates in the prospectus are not treated as birth dates.
-- Conservative heuristics for names, company names, and addresses.
+- Conservative heuristics for names, legal entity names, and addresses.
+- Company detection favors complete legal-entity spans and avoids generic banking or institutional role labels.
 - A consistency pass that reapplies known replacements to repeated values across the document.
 
 The project intentionally avoids large NER model downloads so it remains easy to run and deploy on free cloud tiers. The tradeoff is that rare names or unusual addresses may require adding a dictionary entry or another detector rule.
@@ -120,7 +121,7 @@ Current prospectus audit:
 
 | Audit item | Value |
 | --- | ---: |
-| Total replacements | 321 |
+| Total replacements | 290 |
 | XML parts scanned | 150 |
 | Paragraphs scanned | 4864 |
 | Residual detected originals | 0 |

@@ -82,6 +82,98 @@ class RedactionTests(unittest.TestCase):
         )
         self.assertEqual(detect_entities(text), [])
 
+    def test_company_detector_ignores_generic_role_labels(self) -> None:
+        text = (
+            "Bankers to the Offer include Escrow Collection Bank, Refund Bank, "
+            "Public Offer Account Bank and Sponsor Banks. Ratings mention Long Term Bank "
+            "Facilities and Short Term Bank Facilities. RBI means Reserve Bank of India. "
+            "The loan was with State Bank of India. Stock Exchanges include BSE Limited. "
+            "Fragments such as India Limited, Pandit LLP, and Advisory Private Limited are not enough."
+        )
+        companies = [entity.text for entity in detect_entities(text) if entity.entity_type == "company"]
+        for false_positive in [
+            "Escrow Collection Bank",
+            "Refund Bank",
+            "Reserve Bank",
+            "Short Term Bank",
+            "State Bank",
+            "India Limited",
+            "Pandit LLP",
+            "Advisory Private Limited",
+            "BSE Limited",
+        ]:
+            self.assertNotIn(false_positive, companies)
+
+    def test_company_detector_keeps_complete_legal_entity_spans(self) -> None:
+        text = (
+            "The book running lead managers are Nuvama Wealth Management Limited "
+            "and ICICI Securities Limited. The registrar is MUFG Intime India Private Limited. "
+            "The CARE Report was prepared by CARE Analytics and Advisory Private Limited. "
+            "The auditors are Kirtane & Pandit LLP. "
+            "SECI Solar Energy Corporation of India Limited appears in abbreviations. "
+            "Suppliers include Vedanta Limited and Cindus Corporation."
+        )
+        companies = [entity.text for entity in detect_entities(text) if entity.entity_type == "company"]
+
+        for expected in [
+            "Nuvama Wealth Management Limited",
+            "ICICI Securities Limited",
+            "MUFG Intime India Private Limited",
+            "CARE Analytics and Advisory Private Limited",
+            "Kirtane & Pandit LLP",
+            "Solar Energy Corporation of India Limited",
+            "Vedanta Limited",
+            "Cindus Corporation",
+        ]:
+            self.assertIn(expected, companies)
+        self.assertNotIn("Advisory Private Limited", companies)
+        self.assertNotIn("Pandit LLP", companies)
+        self.assertNotIn("Solar Energy Corporation", companies)
+        self.assertNotIn("SECI Solar Energy Corporation of India Limited", companies)
+
+    def test_company_detector_does_not_merge_trust_list_with_company(self) -> None:
+        text = (
+            "Promoter Selling Shareholders include Kanchenjunga Family Trust "
+            "and Waterloo Industrial Park VI Private Limited."
+        )
+        companies = [entity.text for entity in detect_entities(text) if entity.entity_type == "company"]
+
+        self.assertIn("Waterloo Industrial Park VI Private Limited", companies)
+        self.assertNotIn(
+            "Kanchenjunga Family Trust and Waterloo Industrial Park VI Private Limited",
+            companies,
+        )
+
+    def test_company_replacement_preserves_complete_span(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.docx"
+            output_path = tmp_path / "output.docx"
+            document = Document()
+            document.add_paragraph(
+                "Prepared by CARE Analytics and Advisory Private Limited for review."
+            )
+            document.add_paragraph(
+                "Certified by Kirtane & Pandit LLP, Chartered Accountants."
+            )
+            document.save(input_path)
+
+            report = redact_docx(input_path, output_path)
+            text = extract_docx_text(output_path)
+            originals = {
+                item["original"]
+                for item in report["entities"]
+                if item["type"] == "company"
+            }
+
+            self.assertIn("CARE Analytics and Advisory Private Limited", originals)
+            self.assertIn("Kirtane & Pandit LLP", originals)
+            self.assertNotIn("Advisory Private Limited", originals)
+            self.assertNotIn("Pandit LLP", originals)
+            self.assertNotIn("CARE Analytics and Advisory Private Limited", text)
+            self.assertNotIn("Kirtane & Pandit LLP", text)
+            self.assertNotIn("CARE Analytics and", text)
+
     def test_redacts_grouped_indian_phone_number(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

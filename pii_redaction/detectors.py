@@ -77,12 +77,15 @@ STREET_ADDRESS_RE = re.compile(
 
 COMPANY_SUFFIX = (
     r"(?:Private\s+Limited|Pvt\.?\s+Ltd\.?|Limited|Ltd\.?|LLP|Inc\.?|LLC|"
-    r"Corporation|Corp\.?|Company|Co\.?|Bank|Technologies|Services|Solutions)"
+    r"Corporation(?!\s+of\s+[A-Z])|Corp\.?(?!\s+of\s+[A-Z])|Co\.?)"
 )
 
+COMPANY_WORD = r"[A-Z][A-Za-z0-9'()/.\-]*"
+
 COMPANY_RE = re.compile(
-    rf"\b[A-Z][A-Za-z0-9&'()/\-]+"
-    rf"(?:\s+[A-Z][A-Za-z0-9&'()/\-]+){{0,7}}\s+{COMPANY_SUFFIX}\b"
+    rf"\b{COMPANY_WORD}"
+    rf"(?:(?:\s*&\s*|\s+(?:and|of|for|the)\s+|\s+){COMPANY_WORD}){{0,10}}?"
+    rf"\s+{COMPANY_SUFFIX}\b"
 )
 
 HONORIFIC_NAME_RE = re.compile(
@@ -245,11 +248,29 @@ ORG_OR_ADDRESS_WORDS = {
 
 GENERIC_COMPANY_PREFIXES = {
     "And",
+    "Bank",
+    "Bankers",
+    "Banks",
+    "Book",
+    "Collectively",
+    "Collection",
+    "Company",
+    "Corporate",
+    "Escrow",
     "Formerly",
+    "Lead",
+    "Managers",
+    "Offer",
     "Our",
     "Private",
     "Public",
+    "Refund",
+    "Registered",
+    "Registrar",
+    "Share",
+    "Sponsor",
     "Stock",
+    "Syndicate",
     "The",
     "This",
 }
@@ -260,6 +281,45 @@ GENERIC_COMPANY_VALUES = {
     "The Company",
     "Private Limited",
     "Public Limited",
+}
+
+GENERIC_COMPANY_CORE_WORDS = {
+    "Account",
+    "Advisory",
+    "Bank",
+    "Banks",
+    "Capital",
+    "Collection",
+    "Depository",
+    "Electricals",
+    "Escrow",
+    "Exchange",
+    "Exchanges",
+    "Facilities",
+    "Finance",
+    "Financial",
+    "India",
+    "Indian",
+    "Industrial",
+    "Investment",
+    "Limited",
+    "Long",
+    "Management",
+    "Market",
+    "National",
+    "Offer",
+    "Payments",
+    "Private",
+    "Public",
+    "Refund",
+    "Reserve",
+    "Services",
+    "Short",
+    "Solutions",
+    "State",
+    "Switchgear",
+    "Stock",
+    "Term",
 }
 
 
@@ -422,28 +482,98 @@ def _extend_street_address_end(text: str, start: int, initial_end: int) -> int:
 def _company_entities(text: str) -> list[Entity]:
     entities: list[Entity] = []
     for match in COMPANY_RE.finditer(text):
-        value = match.group(0).strip()
-        start = match.start()
-        prefix_match = re.match(r"^(?:Formerly|formerly)\s+", value)
-        if prefix_match:
-            start += prefix_match.end()
-            value = value[prefix_match.end() :].strip()
-        normalized = " ".join(value.split())
-        words = normalized.split()
-        if len(words) < 2:
-            continue
-        if normalized in GENERIC_COMPANY_VALUES:
-            continue
-        if words[0].rstrip(".,") in GENERIC_COMPANY_PREFIXES:
-            continue
-        if normalized.endswith(" Company") and text[match.end() : match.end() + 20].lower().startswith(" secretary"):
-            continue
-        if normalized.count("Private Limited") > 1 or normalized.count("Limited") > 2:
-            continue
-        entities.append(
-            Entity(start, start + len(value), "company", value, 0.9, "company_suffix")
-        )
+        entity = _best_company_entity(text, match.start(), match.end())
+        if entity:
+            entities.append(entity)
     return entities
+
+
+def _best_company_entity(text: str, raw_start: int, raw_end: int) -> Entity | None:
+    raw_value = text[raw_start:raw_end].strip(" ,;:")
+    raw_leading_spaces = len(text[raw_start:raw_end]) - len(text[raw_start:raw_end].lstrip())
+    raw_start += raw_leading_spaces
+    for offset in _company_candidate_offsets(raw_value):
+        value = raw_value[offset:].strip(" ,;:")
+        leading_spaces = len(raw_value[offset:]) - len(raw_value[offset:].lstrip())
+        start = raw_start + offset + leading_spaces
+        if not value:
+            continue
+        if _valid_company_value(value, text, start, start + len(value)):
+            return Entity(start, start + len(value), "company", value, 0.9, "company_suffix")
+    return None
+
+
+def _company_candidate_offsets(value: str) -> list[int]:
+    offsets = [0]
+    for match in re.finditer(r"\b[A-Z][A-Za-z0-9'()/.\-]*\b", value):
+        if match.start() not in offsets:
+            offsets.append(match.start())
+    return offsets
+
+
+def _valid_company_value(value: str, text: str, start: int, end: int) -> bool:
+    normalized = " ".join(value.split())
+    if normalized in GENERIC_COMPANY_VALUES:
+        return False
+    suffix_match = re.search(
+        rf"\s+({COMPANY_SUFFIX})$",
+        normalized,
+    )
+    if not suffix_match:
+        return False
+    suffix = suffix_match.group(1).lower().replace(".", "")
+    core = normalized[: suffix_match.start()].strip()
+    core_words = _company_core_words(core)
+    if len(core_words) < 2 and not _valid_single_word_company(core_words, suffix):
+        return False
+    if core_words[0] in GENERIC_COMPANY_PREFIXES:
+        return False
+    if _leading_acronym_matches_following(core_words, suffix):
+        return False
+    if _all_company_core_words_are_generic(core_words):
+        return False
+    if suffix in {"limited", "ltd"} and len(core_words) == 1 and core_words[0].isupper():
+        return False
+    if normalized.count("Private Limited") > 1 or normalized.count("Limited") > 2:
+        return False
+    if re.search(r"\b(?:Trust|HUF|Shareholder|Shareholders|Promoter)\s+and\s+", core):
+        return False
+    if normalized.endswith(" Company") and text[end : end + 20].lower().startswith(" secretary"):
+        return False
+    return True
+
+
+def _company_core_words(core: str) -> list[str]:
+    words = re.findall(r"[A-Za-z][A-Za-z0-9'.\-]*", core)
+    return [
+        word.strip(".,")
+        for word in words
+        if word.lower() not in {"and", "of", "for", "the"}
+    ]
+
+
+def _all_company_core_words_are_generic(words: list[str]) -> bool:
+    return all(word in GENERIC_COMPANY_CORE_WORDS or len(word) <= 1 for word in words)
+
+
+def _valid_single_word_company(words: list[str], suffix: str) -> bool:
+    if len(words) != 1:
+        return False
+    word = words[0]
+    if word in GENERIC_COMPANY_CORE_WORDS or word.isupper() or len(word) < 4:
+        return False
+    return suffix in {"limited", "ltd", "corporation", "corp", "inc", "llc"}
+
+
+def _leading_acronym_matches_following(words: list[str], suffix: str) -> bool:
+    if len(words) < 3:
+        return False
+    leading = words[0].strip(".")
+    if not leading.isupper() or not 2 <= len(leading) <= 6:
+        return False
+    following_initials = "".join(word[0].upper() for word in words[1:] if word[:1].isalpha())
+    suffix_initial = suffix[:1].upper() if suffix else ""
+    return following_initials.startswith(leading) or (following_initials + suffix_initial).startswith(leading)
 
 
 def _name_entities(text: str) -> list[Entity]:
