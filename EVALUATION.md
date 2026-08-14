@@ -34,7 +34,7 @@ These are entity-level set metrics measured against the controlled fixture groun
 
 ## Prospectus Audit
 
-- Total replacements: 290
+- Total replacements: 354
 - XML parts scanned: 150
 - Paragraphs scanned: 4864
 - Residual original PII values found after replacement: 0
@@ -46,9 +46,9 @@ These are entity-level set metrics measured against the controlled fixture groun
 | PII Type | Replacements |
 | --- | ---: |
 | address | 13 |
-| company | 125 |
+| company | 130 |
 | email | 52 |
-| person | 95 |
+| person | 154 |
 | phone | 5 |
 
 ## False Positive / False Negative Notes

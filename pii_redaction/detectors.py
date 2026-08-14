@@ -76,7 +76,7 @@ STREET_ADDRESS_RE = re.compile(
 )
 
 COMPANY_SUFFIX = (
-    r"(?:Private\s+Limited|Pvt\.?\s+Ltd\.?|Limited|Ltd\.?|LLP|Inc\.?|LLC|"
+    r"(?i:Private\s+Limited|Pvt\.?\s+Ltd\.?|Limited|Ltd\.?|LLP|Inc\.?|LLC|"
     r"Corporation(?!\s+of\s+[A-Z])|Corp\.?(?!\s+of\s+[A-Z])|Co\.?)"
 )
 
@@ -95,6 +95,10 @@ HONORIFIC_NAME_RE = re.compile(
 
 PERSON_CANDIDATE_RE = re.compile(
     r"\b[A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){1,3}\b"
+)
+
+UPPER_PERSON_CANDIDATE_RE = re.compile(
+    r"\b[A-Z][A-Z'.-]{1,}(?:\s+[A-Z][A-Z'.-]{1,}){1,3}\b"
 )
 
 COMMON_FIRST_NAMES = {
@@ -136,6 +140,7 @@ COMMON_FIRST_NAMES = {
     "Isha",
     "Karan",
     "Kavita",
+    "Kushal",
     "Kunal",
     "Mahesh",
     "Manish",
@@ -155,6 +160,7 @@ COMMON_FIRST_NAMES = {
     "Rahul",
     "Raj",
     "Rajesh",
+    "Rakhi",
     "Rakesh",
     "Rashi",
     "Rohan",
@@ -226,6 +232,7 @@ ORG_OR_ADDRESS_WORDS = {
     "Company",
     "Complex",
     "Corporation",
+    "Electricals",
     "Floor",
     "Fund",
     "Group",
@@ -236,6 +243,7 @@ ORG_OR_ADDRESS_WORDS = {
     "Ltd",
     "Nagar",
     "Office",
+    "Motors",
     "Private",
     "Road",
     "SEBI",
@@ -256,6 +264,7 @@ GENERIC_COMPANY_PREFIXES = {
     "Collection",
     "Company",
     "Corporate",
+    "Details",
     "Escrow",
     "Formerly",
     "Lead",
@@ -513,7 +522,7 @@ def _company_candidate_offsets(value: str) -> list[int]:
 
 def _valid_company_value(value: str, text: str, start: int, end: int) -> bool:
     normalized = " ".join(value.split())
-    if normalized in GENERIC_COMPANY_VALUES:
+    if normalized.casefold() in {item.casefold() for item in GENERIC_COMPANY_VALUES}:
         return False
     suffix_match = re.search(
         rf"\s+({COMPANY_SUFFIX})$",
@@ -523,10 +532,12 @@ def _valid_company_value(value: str, text: str, start: int, end: int) -> bool:
         return False
     suffix = suffix_match.group(1).lower().replace(".", "")
     core = normalized[: suffix_match.start()].strip()
+    if re.match(r"^(?:and|of|for|the)\s+", core, re.IGNORECASE):
+        return False
     core_words = _company_core_words(core)
     if len(core_words) < 2 and not _valid_single_word_company(core_words, suffix):
         return False
-    if core_words[0] in GENERIC_COMPANY_PREFIXES:
+    if core_words[0].title() in GENERIC_COMPANY_PREFIXES:
         return False
     if _leading_acronym_matches_following(core_words, suffix):
         return False
@@ -536,7 +547,7 @@ def _valid_company_value(value: str, text: str, start: int, end: int) -> bool:
         return False
     if normalized.count("Private Limited") > 1 or normalized.count("Limited") > 2:
         return False
-    if re.search(r"\b(?:Trust|HUF|Shareholder|Shareholders|Promoter)\s+and\s+", core):
+    if re.search(r"\b(?:Trust|HUF|Shareholder|Shareholders|Promoter)\s+and\s+", core, re.IGNORECASE):
         return False
     if normalized.endswith(" Company") and text[end : end + 20].lower().startswith(" secretary"):
         return False
@@ -553,14 +564,14 @@ def _company_core_words(core: str) -> list[str]:
 
 
 def _all_company_core_words_are_generic(words: list[str]) -> bool:
-    return all(word in GENERIC_COMPANY_CORE_WORDS or len(word) <= 1 for word in words)
+    return all(word.title() in GENERIC_COMPANY_CORE_WORDS or len(word) <= 1 for word in words)
 
 
 def _valid_single_word_company(words: list[str], suffix: str) -> bool:
     if len(words) != 1:
         return False
     word = words[0]
-    if word in GENERIC_COMPANY_CORE_WORDS or word.isupper() or len(word) < 4:
+    if word.title() in GENERIC_COMPANY_CORE_WORDS or word.isupper() or len(word) < 4:
         return False
     return suffix in {"limited", "ltd", "corporation", "corp", "inc", "llc"}
 
@@ -581,16 +592,26 @@ def _name_entities(text: str) -> list[Entity]:
     for match in PERSON_CANDIDATE_RE.finditer(text):
         value = match.group(0)
         words = value.split()
-        if len(words) < 2 or len(words) > 4:
-            continue
-        if words[0] not in COMMON_FIRST_NAMES:
-            continue
-        if any(word.rstrip(".") in ORG_OR_ADDRESS_WORDS for word in words):
-            continue
-        if words[0] in PERSON_STOPWORDS or words[-1] in PERSON_STOPWORDS:
-            continue
-        entities.append(Entity(match.start(), match.end(), "person", value, 0.82, "first_name_list"))
+        if _valid_person_words(words):
+            entities.append(Entity(match.start(), match.end(), "person", value, 0.82, "first_name_list"))
+    for match in UPPER_PERSON_CANDIDATE_RE.finditer(text):
+        value = match.group(0)
+        words = [word.title() for word in value.split()]
+        if _valid_person_words(words):
+            entities.append(Entity(match.start(), match.end(), "person", value, 0.8, "uppercase_name"))
     return entities
+
+
+def _valid_person_words(words: list[str]) -> bool:
+    if len(words) < 2 or len(words) > 4:
+        return False
+    if words[0] not in COMMON_FIRST_NAMES:
+        return False
+    if any(word.rstrip(".") in ORG_OR_ADDRESS_WORDS for word in words):
+        return False
+    if words[0] in PERSON_STOPWORDS or words[-1] in PERSON_STOPWORDS:
+        return False
+    return True
 
 
 def _luhn_valid(digits: str) -> bool:

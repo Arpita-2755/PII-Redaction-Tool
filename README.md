@@ -121,7 +121,7 @@ Current prospectus audit:
 
 | Audit item | Value |
 | --- | ---: |
-| Total replacements | 290 |
+| Total replacements | 354 |
 | XML parts scanned | 150 |
 | Paragraphs scanned | 4864 |
 | Residual detected originals | 0 |

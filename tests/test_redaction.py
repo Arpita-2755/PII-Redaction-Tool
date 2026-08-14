@@ -81,6 +81,7 @@ class RedactionTests(unittest.TestCase):
             "invalid IP 999.168.1.25, support line 12345, and addressed respectively."
         )
         self.assertEqual(detect_entities(text), [])
+        self.assertEqual(detect_entities("Kushal Electricals is a trade name, not a person."), [])
 
     def test_company_detector_ignores_generic_role_labels(self) -> None:
         text = (
@@ -98,9 +99,11 @@ class RedactionTests(unittest.TestCase):
             "Short Term Bank",
             "State Bank",
             "India Limited",
+            "INDIA LIMITED",
             "Pandit LLP",
             "Advisory Private Limited",
             "BSE Limited",
+            "BSE LIMITED",
         ]:
             self.assertNotIn(false_positive, companies)
 
@@ -131,6 +134,79 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn("Solar Energy Corporation", companies)
         self.assertNotIn("SECI Solar Energy Corporation of India Limited", companies)
 
+    def test_uppercase_cover_page_company_and_promoters_are_redacted(self) -> None:
+        company_paragraph = (
+            " KSH INTERNATIONAL LIMITED CORPORATE IDENTITY NUMBER: U28129PN1979PLC141032"
+        )
+        promoter_paragraph = (
+            "OUR PROMOTERS: KUSHAL SUBBAYYA HEGDE, PUSHPA KUSHAL HEGDE, "
+            "RAJESH KUSHAL HEGDE, ROHIT KUSHAL HEGDE, RAKHI GIRIJA SHETTY"
+        )
+        title_case_paragraph = (
+            "KSH International Limited lists Kushal Subbayya Hegde and "
+            "Rakhi Girija Shetty in later sections."
+        )
+
+        companies = [
+            entity.text
+            for entity in detect_entities(company_paragraph)
+            if entity.entity_type == "company"
+        ]
+        promoters = [
+            entity.text
+            for entity in detect_entities(promoter_paragraph)
+            if entity.entity_type == "person"
+        ]
+
+        self.assertEqual(companies, ["KSH INTERNATIONAL LIMITED"])
+        for expected in [
+            "KUSHAL SUBBAYYA HEGDE",
+            "PUSHPA KUSHAL HEGDE",
+            "RAJESH KUSHAL HEGDE",
+            "ROHIT KUSHAL HEGDE",
+            "RAKHI GIRIJA SHETTY",
+        ]:
+            self.assertIn(expected, promoters)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.docx"
+            output_path = tmp_path / "output.docx"
+            document = Document()
+            document.add_paragraph(company_paragraph)
+            document.add_paragraph(promoter_paragraph)
+            document.add_paragraph(title_case_paragraph)
+            document.save(input_path)
+
+            report = redact_docx(input_path, output_path)
+            text = extract_docx_text(output_path)
+
+            for original in [
+                "KSH INTERNATIONAL LIMITED",
+                "KSH International Limited",
+                "KUSHAL SUBBAYYA HEGDE",
+                "Kushal Subbayya Hegde",
+                "RAKHI GIRIJA SHETTY",
+                "Rakhi Girija Shetty",
+            ]:
+                self.assertNotIn(original, text)
+
+            replacements_by_original = {
+                item["original"]: item["replacement"] for item in report["entities"]
+            }
+            self.assertEqual(
+                replacements_by_original["KSH INTERNATIONAL LIMITED"],
+                replacements_by_original["KSH International Limited"],
+            )
+            self.assertEqual(
+                replacements_by_original["KUSHAL SUBBAYYA HEGDE"],
+                replacements_by_original["Kushal Subbayya Hegde"],
+            )
+            self.assertEqual(
+                replacements_by_original["RAKHI GIRIJA SHETTY"],
+                replacements_by_original["Rakhi Girija Shetty"],
+            )
+
     def test_company_detector_does_not_merge_trust_list_with_company(self) -> None:
         text = (
             "Promoter Selling Shareholders include Kanchenjunga Family Trust "
@@ -143,6 +219,33 @@ class RedactionTests(unittest.TestCase):
             "Kanchenjunga Family Trust and Waterloo Industrial Park VI Private Limited",
             companies,
         )
+        uppercase_companies = [
+            entity.text
+            for entity in detect_entities(
+                "KANCHENJUNGA FAMILY TRUST AND WATERLOO INDUSTRIAL PARK VI PRIVATE LIMITED"
+            )
+            if entity.entity_type == "company"
+        ]
+        self.assertNotIn(
+            "KANCHENJUNGA FAMILY TRUST AND WATERLOO INDUSTRIAL PARK VI PRIVATE LIMITED",
+            uppercase_companies,
+        )
+        self.assertNotIn(
+            "AND WATERLOO INDUSTRIAL PARK VI PRIVATE LIMITED",
+            uppercase_companies,
+        )
+        self.assertIn(
+            "WATERLOO INDUSTRIAL PARK VI PRIVATE LIMITED",
+            uppercase_companies,
+        )
+
+        of_companies = [
+            entity.text
+            for entity in detect_entities("DETAILS OF KSH INTERNATIONAL LIMITED")
+            if entity.entity_type == "company"
+        ]
+        self.assertIn("KSH INTERNATIONAL LIMITED", of_companies)
+        self.assertNotIn("OF KSH INTERNATIONAL LIMITED", of_companies)
 
     def test_company_replacement_preserves_complete_span(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

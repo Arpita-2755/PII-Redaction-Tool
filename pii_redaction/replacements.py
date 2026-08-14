@@ -64,21 +64,25 @@ class ReplacementFactory:
     """Create stable fake replacements for each original value."""
 
     def __init__(self) -> None:
-        self.mapping: dict[tuple[str, str], str] = {}
+        self.mapping: dict[tuple[str, str], tuple[str, str]] = {}
 
     def replacement_for(self, entity_type: str, value: str) -> str:
-        key = (entity_type, _normalize(value))
+        original = _normalize(value)
+        key = (entity_type, _canonical_value(entity_type, value))
         if key not in self.mapping:
             replacement = self._generate(entity_type, value)
             if _normalize(replacement).lower() == _normalize(value).lower():
                 replacement = self._generate(entity_type, f"{value}:alternate")
-            self.mapping[key] = replacement
-        return self.mapping[key]
+            self.mapping[key] = (original, replacement)
+        return self.mapping[key][1]
 
     def export_mapping(self) -> list[dict[str, str]]:
         return [
             {"type": entity_type, "original": original, "replacement": replacement}
-            for (entity_type, original), replacement in sorted(self.mapping.items())
+            for (entity_type, _), (original, replacement) in sorted(
+                self.mapping.items(),
+                key=lambda item: (item[0][0], item[1][0]),
+            )
         ]
 
     def _generate(self, entity_type: str, value: str) -> str:
@@ -166,3 +170,10 @@ def _stable_index(value: str, modulo: int) -> int:
 
 def _normalize(value: str) -> str:
     return " ".join(value.strip().split())
+
+
+def _canonical_value(entity_type: str, value: str) -> str:
+    normalized = _normalize(value)
+    if entity_type in {"company", "email", "person"}:
+        return normalized.casefold()
+    return normalized
